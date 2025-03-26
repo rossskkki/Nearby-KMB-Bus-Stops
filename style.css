@@ -1,0 +1,48 @@
+body {
+    font-family:Arial, Helvetica, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.title-container {
+    text-align: center;
+    position: relative;
+    padding: 20px 0;
+    margin-bottom: 30px;
+    display: inline-block;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.title-container::before,
+.title-container::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background-color: transparent;
+    border-top: 2px solid black;
+    border-bottom: 2px solid black;
+}
+
+.title-container::before {
+    top: 10px;
+}
+
+.title-container::after {
+    bottom: 10px;
+}
+
+h1 {
+    font-size: 36px;
+    font-weight: bold;
+    margin: 0;
+    padding: 10px 0;
+}
+
+.query{
+    margin-left: 2%;
+    font-family:'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+    font-weight: bold;
+}
