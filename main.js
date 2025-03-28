@@ -30,8 +30,8 @@ getloc().then(location => {
     current_lat = current_location[0];
     current_lon = current_location[1];
 
-    current_lat = 22.28399
-    current_lon = 114.13333
+    // current_lat = 22.28399
+    // current_lon = 114.13333
     let selection = document.getElementById("distance");
 
     async function updateBusStops() {
@@ -50,9 +50,12 @@ getloc().then(location => {
                 output += `
                     <div class="bus-stop-item">
                         <div class="distance-info">Distance: ${bus_stop.distance}m</div>
-                        <div class="stop-info">Stop: <span id="${bus_stop.stop}" class="stop-name">${bus_stop.name_en}</span></div>
+                        <div class="stop-info">Stop: <span id="${bus_stop.stop}" class="stop-name" data-lat="${bus_stop.lat}" data-long="${bus_stop.long}" data-distance="${bus_stop.distance}">${bus_stop.name_en}</span></div>
                     </div>
-                    <div id="stop_${bus_stop.stop}" class="stop-detail"></div>
+                    <div class='cover-stop-detail'>
+                        <div id="stop_${bus_stop.stop}" class="stop-detail"></div>
+                        <div id="stop_${bus_stop.stop}_map" class="maps"></div>
+                    </div>
                 `;
             }
             output += '</div>';
@@ -72,10 +75,194 @@ getloc().then(location => {
     async function display_bus_stop_info(event) {
         try {
             const stop_id = event.target.id;
+            const bus_stop_item = event.target.parentElement.parentElement;
+
+            // remove previous bus stop info
+            const allStopDetails = document.getElementsByClassName('stop-detail');
+            for (let i = 0; i < allStopDetails.length; i++) {
+                allStopDetails[i].innerHTML = '';
+            }
+
+            // remove highlighted class from all bus stops
+            const allBusStops = document.getElementsByClassName('bus-stop-item');
+            for (let item of allBusStops) {
+                item.classList.remove('highlighted');
+            }
+            // add highlighted class to clicked bus stop
+            bus_stop_item.classList.add('highlighted');
             const bus_stop_info = await get_bus_stop_info(stop_id);
             console.log("Bus Stop Info:", bus_stop_info); 
-        } 
-        catch (error) {
+
+            //remove previous map
+            const allMaps = document.getElementsByClassName('maps');
+            for (let i = 0; i < allMaps.length; i++) {
+                allMaps[i].innerHTML = '';
+                allMaps[i].classList.remove('map-size')
+            }
+            // add map size
+            let map = document.getElementById(`stop_${stop_id}_map`);
+            map.classList.add('map-size');
+
+            let stop_lat = Number(event.target.dataset.lat);
+            let stop_long = Number(event.target.dataset.long);
+            console.log("Stop Latitude:", stop_lat);
+            console.log("Stop Longitude:", stop_long);
+            console.log("Current Latitude:", current_lat);
+            console.log("Current Longitude:", current_lon);
+            let middle_lat = (stop_lat + current_lat) / 2;
+            let middle_long = (stop_long + current_lon) / 2;
+            let middle_point = [middle_long, middle_lat];
+            console.log("Middle Point:", middle_point);
+
+            // add map
+            var gmap = new ol.Map({
+                target: map,
+                layers: [
+                    new ol.layer.Tile({
+                        source: new ol.source.OSM()
+                    })
+                ],
+                view: new ol.View({
+                    center: ol.proj.fromLonLat(middle_point),
+                    zoom: getAppropriateZoom(Number(event.target.dataset.distance))
+                })
+            });
+            
+            // create a feature for the current position
+            const currentPositionFeature = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([current_lon, current_lat]))
+            });
+            
+            // create a style for the current position marker
+            currentPositionFeature.setStyle(new ol.style.Style({
+                image: new ol.style.Icon({
+                    src: 'map-marker.ico',
+                    scale: 0.5,
+                    anchor: [0.5, 1]
+                })
+            }));
+            
+            // create a feature for the bus stop
+            const busStopFeature = new ol.Feature({
+                geometry: new ol.geom.Point(ol.proj.fromLonLat([stop_long, stop_lat]))
+            });
+            
+            // create a style for the bus stop marker
+            busStopFeature.setStyle(new ol.style.Style({
+                image: new ol.style.Icon({
+                    src: 'bus-icon.ico',
+                    scale: 0.8,
+                    anchor: [0.5, 0.5]
+                })
+            }));
+            
+            // create a vector layer to hold the features
+            const vectorLayer = new ol.layer.Vector({
+                source: new ol.source.Vector({
+                    features: [currentPositionFeature, busStopFeature]
+                })
+            });
+            
+            // add the vector layer to the map
+            gmap.addLayer(vectorLayer);
+            
+            // ensure the zoom level is appropriate
+            function getAppropriateZoom(distance) {
+                console.log("Distance:", distance);
+                if (distance < 50) {
+                    return 19;
+                } else if (distance < 200) {
+                    return 18;
+                } else if (distance < 350) {
+                    return 17;
+                } else {
+                    return 16;
+                }
+            }
+
+            // Check if there is any bus route information
+            if (Object.keys(bus_stop_info).length === 0) {
+                console.log("No bus route information");
+                let output = "<p>No bus route information</p>";
+                document.getElementById(`stop_${stop_id}`).innerHTML = output;
+                const mapElement = document.getElementById(`stop_${stop_id}_map`);
+                mapElement.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'nearest',    
+                    inline: 'nearest' 
+                });
+                return;
+            }
+
+            let output = "<div class='stop-detail-container'>";
+            // Check if there are any routes with the same route number but different direction
+            const routes = {};
+            for (const routeKey in bus_stop_info) {
+                const routeNumber = routeKey.split('(')[0];
+                if (!routes[routeNumber]) {
+                    routes[routeNumber] = [];
+                }
+                routes[routeNumber].push(routeKey);
+            }
+
+            // Display routes according to the route number and direction
+            for (const routeNumber in routes) {
+                const routeKeys = routes[routeNumber];
+                if (routeKeys.length > 1) {
+                    // two directions, routeKey
+                    routeKeys.forEach(routeKey => {
+                        const [etas, dir, type, dest] = bus_stop_info[routeKey];
+                        output += `<div class='stop-detail-item-container'>
+                                        <div class= 'stop-detail-info'>
+                                            <span class='stop-detail-route'>${routeKey}</span>  
+                                            <span class='stop-detail-dest'>${dest}</span>
+                                        </div>
+                                        <div class='eta-container'>
+                                            <span class='eta-label'>ETA: </span>${etas.map(eta => {
+                                            const etaTime = new Date(eta);
+                                            //time format
+                                            return `<span class='eta-time'>${etaTime.toLocaleString('en-US', {
+                                                hour: 'numeric',
+                                                minute: '2-digit',
+                                                hour12: true
+                                            })}</span>`;
+                                    }).join('')}</div>
+                                   </div>`;
+                    });
+                } else {
+                    // one direction, routeNumber
+                    const routeKey = routeKeys[0];
+                    const [etas, dir, type, dest] = bus_stop_info[routeKey];
+                    output += `<div class='stop-detail-item-container'>
+                                <div class= 'stop-detail-info'>
+                                    <span class='stop-detail-route'>${routeNumber}</span>  
+                                    <span class='stop-detail-dest'>${dest}</span>
+                                </div>
+                                <div class='eta-container'>
+                                    <span class='eta-label'>ETA: </span>${etas.map(eta => {
+                                    const etaTime = new Date(eta);
+                                    //time format
+                                    return `<span class='eta-time'>${etaTime.toLocaleString('en-US', {
+                                        hour: 'numeric',
+                                        minute: '2-digit',
+                                        hour12: true
+                                    })}</span>`;
+                            }).join('')}</div>
+                        </div>`;
+                }
+            }
+            output += "</div>";
+            const detailElement = document.getElementById(`stop_${stop_id}`);
+            detailElement.innerHTML = output;
+    
+            //  displays the information of the selected bus stop within the browser window
+            const mapElement = document.getElementById(`stop_${stop_id}_map`);
+            mapElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'nearest',    
+                inline: 'nearest'   
+            });
+        }catch (error) {
             console.error("Error displaying bus stop info:", error); 
         }
     }
@@ -165,8 +352,8 @@ async function get_bus_stop_info(stop_id){
         
         for (let i = 0; i < data.length; i++) {
             const { route, service_type, dir, dest_en, eta } = data[i];
-            // 使用路线号码和方向创建唯一标识
-            const routeKey = `${route}_${dir}`;
+            // use route and dir as key
+            const routeKey = `${route}(${dir === 'O' ? 'outbound' : 'inbound'})`;
             
             if (eta === null) continue;
             
